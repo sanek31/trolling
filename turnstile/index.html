@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SS14 Turnstile</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #0b0f14; color: #e6edf3;
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    width: min(680px, 92vw); padding: 28px;
+    border: 1px solid #26303b; border-radius: 14px; background: #111820;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  h1 { margin: 0 0 6px; font-size: 21px; letter-spacing: .2px; }
+  p { margin: 0 0 18px; color: #8b98a5; }
+  code { color: #7ee787; }
+  .cf-turnstile { margin: 18px 0; }
+  textarea {
+    width: 100%; height: 120px; resize: vertical; padding: 10px;
+    border: 1px solid #26303b; border-radius: 8px;
+    background: #0b0f14; color: #7ee787;
+    font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  button {
+    border: 0; border-radius: 8px; padding: 10px 14px;
+    font-weight: 650; cursor: pointer; background: #238636; color: #fff;
+  }
+  button.secondary { background: #1c2530; color: #c9d1d9; border: 1px solid #26303b; }
+  #status { margin-top: 12px; color: #8b98a5; font: 12.5px ui-monospace, monospace; }
+  #status.ok { color: #7ee787; }
+  #status.err { color: #ff7b72; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SS14 Turnstile token</h1>
+  <p>Host: <code id="host"></code>. Solve the widget, then copy the token.</p>
+
+  <div class="cf-turnstile"
+       data-sitekey="0x4AAAAAAFKIZmMUQpD2V34N"
+       data-theme="dark"
+       data-callback="onToken"
+       data-error-callback="onError"
+       data-expired-callback="onExpired"></div>
+
+  <textarea id="token" readonly placeholder="cf-turnstile-response will appear here"></textarea>
+
+  <div class="row">
+    <button type="button" onclick="copyToken()">Copy token</button>
+    <button type="button" class="secondary" onclick="location.reload()">Reload</button>
+  </div>
+
+  <div id="status">waiting for widget…</div>
+</main>
+
+<script>
+  var tokenEl = document.getElementById('token');
+  var statusEl = document.getElementById('status');
+  document.getElementById('host').textContent = location.hostname;
+  window.__turnstileToken = '';
+
+  window.onToken = function (token) {
+    window.__turnstileToken = token;
+    tokenEl.value = token;
+    statusEl.className = 'ok';
+    statusEl.textContent = 'token ok, length ' + token.length + ', host ' + location.hostname;
+  };
+
+  window.onError = function (code) {
+    statusEl.className = 'err';
+    statusEl.textContent = 'Turnstile error ' + code +
+      (String(code) === '110200' ? ' — this sitekey does not allow this hostname' : '');
+  };
+
+  window.onExpired = function () {
+    window.__turnstileToken = '';
+    tokenEl.value = '';
+    statusEl.className = '';
+    statusEl.textContent = 'token expired, solve again';
+  };
+
+  function copyToken() {
+    if (!tokenEl.value) return;
+    navigator.clipboard.writeText(tokenEl.value).then(function () {
+      statusEl.className = 'ok';
+      statusEl.textContent = 'copied';
+    });
+  }
+</script>
+</body>
+</html>
