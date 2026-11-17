@@ -10,46 +10,46 @@
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; padding: 28px 18px 48px;
+    margin: 0; min-height: 100vh; padding: 24px 16px 40px;
     background: #0b0f14; color: #e6edf3;
     font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  main { width: min(1180px, 100%); margin: 0 auto; }
-  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  main { width: min(1420px, 100%); margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
   h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
   header p { margin: 0; color: #8b98a5; }
   code { color: #7ee787; }
   #count { color: #7ee787; font-weight: 700; }
   .grid {
-    display: grid; gap: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
   .card {
     border: 1px solid #26303b; border-radius: 12px; background: #111820;
-    padding: 14px; min-height: 150px;
+    padding: 12px; min-height: 140px;
   }
   .card-head {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px; font-weight: 650;
+    margin-bottom: 8px; font-weight: 650;
   }
   .state { color: #8b98a5; font: 12px ui-monospace, monospace; }
   .state.ok { color: #7ee787; }
   .state.err { color: #ff7b72; }
-  .cf-turnstile { margin: 6px 0 10px; min-height: 66px; }
+  .cf-turnstile { margin: 4px 0 8px; min-height: 66px; }
   .token {
     font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color: #7ee787; word-break: break-all; min-height: 32px;
+    color: #7ee787; word-break: break-all; min-height: 30px;
   }
   .token.empty { color: #8b98a5; }
-  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
   button {
     border: 0; border-radius: 8px; padding: 10px 14px;
     font-weight: 650; cursor: pointer; background: #238636; color: #fff;
   }
   button.secondary { background: #1c2530; color: #c9d1d9; border: 1px solid #26303b; }
   #hint {
-    margin-top: 18px; padding: 12px 14px; border: 1px dashed #26303b;
-    border-radius: 10px; color: #8b98a5; font: 12.5px/1.6 ui-monospace, monospace;
+    margin-top: 16px; padding: 12px 14px; border: 1px dashed #26303b;
+    border-radius: 10px; color: #8b98a5; font: 12.5px/1.65 ui-monospace, monospace;
   }
 </style>
 </head>
@@ -57,22 +57,30 @@
 <main>
   <header>
     <h1>SS14 Turnstile Farm</h1>
-    <p>host <code id="host"></code> · <span id="count">0</span> token(s)</p>
+    <p>
+      host <code id="host"></code> ·
+      <span id="count">0</span>/<span id="total">0</span> token(s) ·
+      <span id="layout"></span>
+    </p>
   </header>
 
   <section class="grid" id="grid"></section>
 
   <div class="actions">
-    <button type="button" onclick="farm.solveAll()">Solve all</button>
-    <button type="button" class="secondary" onclick="farm.resetAll()">Reset all</button>
-    <button type="button" class="secondary" onclick="farm.copyAll()">Copy tokens</button>
+    <button type="button" onclick="window.__farm.solveAll()">Solve all</button>
+    <button type="button" class="secondary" onclick="window.__farm.resetAll()">Reset all</button>
+    <button type="button" class="secondary" onclick="window.__farm.copyAll()">Copy tokens</button>
   </div>
 
   <div id="hint">
+    <code>?count=N</code> sets widgets per page (1–12, default 10).
     Automation API: <code>window.__turnstileTokens</code> — array of
     <code>{i, token, ts}</code>; <code>window.__farm.resetAll()</code>;
-    <code>window.__farm.solveAll()</code>; <code>window.__farm.count()</code>.
-    Error <code>110200</code> on a widget means the sitekey does not allow this hostname.
+    <code>window.__farm.solveAll()</code>; <code>window.__farm.count()</code>;
+    <code>window.__farm.total</code>; DOM events <code>farm:reset</code> /
+    <code>farm:solve</code>. Full tokens are also in the hidden
+    <code>input[name="cf-turnstile-response"]</code> fields.
+    Error <code>110200</code> means the sitekey does not allow this hostname.
   </div>
 </main>
 
@@ -81,15 +89,20 @@
   "use strict";
 
   var SITEKEY = "0x4AAAAAAFKIZmMUQpD2V34N";
-  var COUNT = 5;
+  var params = new URLSearchParams(location.search);
+  var requested = parseInt(params.get("count") || "10", 10);
+  var COUNT = isNaN(requested) ? 10 : Math.max(1, Math.min(12, requested));
 
   var ids = [];
   var tokens = {};
+  var rendered = 0;
   var grid = document.getElementById("grid");
 
   document.getElementById("host").textContent = location.hostname;
+  document.getElementById("total").textContent = String(COUNT);
+  document.getElementById("layout").textContent = "count=" + COUNT;
 
-  for (var i = 0; i < COUNT; i++) {
+  function makeCard(i) {
     var card = document.createElement("div");
     card.className = "card";
     card.setAttribute("data-widget", String(i));
@@ -98,41 +111,52 @@
       '<span class="state" id="st' + i + '">waiting</span></div>' +
       '<div class="cf-turnstile" id="w' + i + '"></div>' +
       '<div class="token empty" id="tk' + i + '">token will appear here</div>';
-    grid.appendChild(card);
+    return card;
+  }
+
+  for (var i = 0; i < COUNT; i++) {
+    grid.appendChild(makeCard(i));
   }
 
   function setState(i, text, cls) {
     var el = document.getElementById("st" + i);
+    if (!el) return;
     el.textContent = text;
     el.className = "state" + (cls ? " " + cls : "");
   }
 
   function sync() {
-    window.__turnstileTokens = Object.keys(tokens).map(function (k) {
-      return { i: Number(k), token: tokens[k].token, ts: tokens[k].ts };
+    window.__turnstileTokens = Object.keys(tokens).map(function (key) {
+      return { i: Number(key), token: tokens[key].token, ts: tokens[key].ts };
     });
-    document.getElementById("count").textContent = String(window.__turnstileTokens.length);
+    document.getElementById("count").textContent =
+      String(window.__turnstileTokens.length);
   }
 
   function onToken(i, token) {
     tokens[i] = { token: token, ts: Date.now() };
     setState(i, "ok · " + token.length, "ok");
     var box = document.getElementById("tk" + i);
-    box.className = "token";
-    box.textContent = token.slice(0, 42) + "…";
+    if (box) {
+      box.className = "token";
+      box.textContent = token.slice(0, 42) + "…";
+    }
     sync();
   }
 
   function onError(i, code) {
-    setState(i, "error " + code + (String(code) === "110200" ? " · hostname not allowed" : ""), "err");
+    var extra = String(code) === "110200" ? " · hostname not allowed" : "";
+    setState(i, "error " + code + extra, "err");
   }
 
   function onExpired(i) {
     delete tokens[i];
     setState(i, "expired", "");
     var box = document.getElementById("tk" + i);
-    box.className = "token empty";
-    box.textContent = "token expired";
+    if (box) {
+      box.className = "token empty";
+      box.textContent = "token expired";
+    }
     sync();
   }
 
@@ -140,12 +164,16 @@
     for (var i = 0; i < COUNT; i++) {
       delete tokens[i];
       try {
-        if (ids[i] !== undefined) window.turnstile.reset(ids[i]);
+        if (ids[i] !== undefined && window.turnstile) {
+          window.turnstile.reset(ids[i]);
+        }
       } catch (e) { /* ignore */ }
       setState(i, "waiting", "");
       var box = document.getElementById("tk" + i);
-      box.className = "token empty";
-      box.textContent = "token will appear here";
+      if (box) {
+        box.className = "token empty";
+        box.textContent = "token will appear here";
+      }
     }
     sync();
   }
@@ -154,30 +182,42 @@
     for (var i = 0; i < COUNT; i++) {
       setState(i, "triggered", "");
       try {
-        if (ids[i] !== undefined) window.turnstile.execute(ids[i]);
+        if (ids[i] !== undefined && window.turnstile) {
+          window.turnstile.execute(ids[i]);
+        }
       } catch (e) { /* managed widgets may ignore execute */ }
     }
   }
 
   function copyAll() {
-    var list = Object.keys(tokens).map(function (k) { return tokens[k].token; });
+    var list = Object.keys(tokens).map(function (key) {
+      return tokens[key].token;
+    });
     if (!list.length) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(list.join("\n")).then(function () {
-        document.getElementById("hint").textContent = "copied " + list.length + " token(s)";
+        document.getElementById("hint").textContent =
+          "copied " + list.length + " token(s)";
       });
     }
   }
 
   window.__farm = {
+    total: COUNT,
     ids: ids,
     tokens: tokens,
     count: function () { return Object.keys(tokens).length; },
+    ready: function () { return rendered; },
     resetAll: resetAll,
     solveAll: solveAll,
     copyAll: copyAll
   };
+  window.farm = window.__farm;
   window.__turnstileTokens = [];
+
+  window.__farmNativeEvents = true;
+  document.addEventListener("farm:reset", resetAll);
+  document.addEventListener("farm:solve", solveAll);
 
   function boot() {
     if (!window.turnstile) {
@@ -196,6 +236,7 @@
             "expired-callback": function () { onExpired(idx); },
             "timeout-callback": function () { onExpired(idx); }
           });
+          rendered += 1;
         } catch (e) {
           onError(idx, "render: " + e.message);
         }
