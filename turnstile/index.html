@@ -3,98 +3,208 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SS14 Turnstile</title>
+<title>SS14 Turnstile Farm</title>
 <meta name="robots" content="noindex,nofollow">
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    margin: 0; min-height: 100vh; padding: 28px 18px 48px;
     background: #0b0f14; color: #e6edf3;
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  main {
-    width: min(680px, 92vw); padding: 28px;
-    border: 1px solid #26303b; border-radius: 14px; background: #111820;
-    box-shadow: 0 20px 60px rgba(0,0,0,.45);
-  }
-  h1 { margin: 0 0 6px; font-size: 21px; letter-spacing: .2px; }
-  p { margin: 0 0 18px; color: #8b98a5; }
+  main { width: min(1180px, 100%); margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  header p { margin: 0; color: #8b98a5; }
   code { color: #7ee787; }
-  .cf-turnstile { margin: 18px 0; }
-  textarea {
-    width: 100%; height: 120px; resize: vertical; padding: 10px;
-    border: 1px solid #26303b; border-radius: 8px;
-    background: #0b0f14; color: #7ee787;
-    font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  #count { color: #7ee787; font-weight: 700; }
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   }
-  .row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .card {
+    border: 1px solid #26303b; border-radius: 12px; background: #111820;
+    padding: 14px; min-height: 150px;
+  }
+  .card-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; font-weight: 650;
+  }
+  .state { color: #8b98a5; font: 12px ui-monospace, monospace; }
+  .state.ok { color: #7ee787; }
+  .state.err { color: #ff7b72; }
+  .cf-turnstile { margin: 6px 0 10px; min-height: 66px; }
+  .token {
+    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #7ee787; word-break: break-all; min-height: 32px;
+  }
+  .token.empty { color: #8b98a5; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
   button {
     border: 0; border-radius: 8px; padding: 10px 14px;
     font-weight: 650; cursor: pointer; background: #238636; color: #fff;
   }
   button.secondary { background: #1c2530; color: #c9d1d9; border: 1px solid #26303b; }
-  #status { margin-top: 12px; color: #8b98a5; font: 12.5px ui-monospace, monospace; }
-  #status.ok { color: #7ee787; }
-  #status.err { color: #ff7b72; }
+  #hint {
+    margin-top: 18px; padding: 12px 14px; border: 1px dashed #26303b;
+    border-radius: 10px; color: #8b98a5; font: 12.5px/1.6 ui-monospace, monospace;
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>SS14 Turnstile token</h1>
-  <p>Host: <code id="host"></code>. Solve the widget, then copy the token.</p>
+  <header>
+    <h1>SS14 Turnstile Farm</h1>
+    <p>host <code id="host"></code> · <span id="count">0</span> token(s)</p>
+  </header>
 
-  <div class="cf-turnstile"
-       data-sitekey="0x4AAAAAAFKIZmMUQpD2V34N"
-       data-theme="dark"
-       data-callback="onToken"
-       data-error-callback="onError"
-       data-expired-callback="onExpired"></div>
+  <section class="grid" id="grid"></section>
 
-  <textarea id="token" readonly placeholder="cf-turnstile-response will appear here"></textarea>
-
-  <div class="row">
-    <button type="button" onclick="copyToken()">Copy token</button>
-    <button type="button" class="secondary" onclick="location.reload()">Reload</button>
+  <div class="actions">
+    <button type="button" onclick="farm.solveAll()">Solve all</button>
+    <button type="button" class="secondary" onclick="farm.resetAll()">Reset all</button>
+    <button type="button" class="secondary" onclick="farm.copyAll()">Copy tokens</button>
   </div>
 
-  <div id="status">waiting for widget…</div>
+  <div id="hint">
+    Automation API: <code>window.__turnstileTokens</code> — array of
+    <code>{i, token, ts}</code>; <code>window.__farm.resetAll()</code>;
+    <code>window.__farm.solveAll()</code>; <code>window.__farm.count()</code>.
+    Error <code>110200</code> on a widget means the sitekey does not allow this hostname.
+  </div>
 </main>
 
 <script>
-  var tokenEl = document.getElementById('token');
-  var statusEl = document.getElementById('status');
-  document.getElementById('host').textContent = location.hostname;
-  window.__turnstileToken = '';
+(function () {
+  "use strict";
 
-  window.onToken = function (token) {
-    window.__turnstileToken = token;
-    tokenEl.value = token;
-    statusEl.className = 'ok';
-    statusEl.textContent = 'token ok, length ' + token.length + ', host ' + location.hostname;
-  };
+  var SITEKEY = "0x4AAAAAAFKIZmMUQpD2V34N";
+  var COUNT = 5;
 
-  window.onError = function (code) {
-    statusEl.className = 'err';
-    statusEl.textContent = 'Turnstile error ' + code +
-      (String(code) === '110200' ? ' — this sitekey does not allow this hostname' : '');
-  };
+  var ids = [];
+  var tokens = {};
+  var grid = document.getElementById("grid");
 
-  window.onExpired = function () {
-    window.__turnstileToken = '';
-    tokenEl.value = '';
-    statusEl.className = '';
-    statusEl.textContent = 'token expired, solve again';
-  };
+  document.getElementById("host").textContent = location.hostname;
 
-  function copyToken() {
-    if (!tokenEl.value) return;
-    navigator.clipboard.writeText(tokenEl.value).then(function () {
-      statusEl.className = 'ok';
-      statusEl.textContent = 'copied';
-    });
+  for (var i = 0; i < COUNT; i++) {
+    var card = document.createElement("div");
+    card.className = "card";
+    card.setAttribute("data-widget", String(i));
+    card.innerHTML =
+      '<div class="card-head"><span>Widget ' + (i + 1) + '</span>' +
+      '<span class="state" id="st' + i + '">waiting</span></div>' +
+      '<div class="cf-turnstile" id="w' + i + '"></div>' +
+      '<div class="token empty" id="tk' + i + '">token will appear here</div>';
+    grid.appendChild(card);
   }
+
+  function setState(i, text, cls) {
+    var el = document.getElementById("st" + i);
+    el.textContent = text;
+    el.className = "state" + (cls ? " " + cls : "");
+  }
+
+  function sync() {
+    window.__turnstileTokens = Object.keys(tokens).map(function (k) {
+      return { i: Number(k), token: tokens[k].token, ts: tokens[k].ts };
+    });
+    document.getElementById("count").textContent = String(window.__turnstileTokens.length);
+  }
+
+  function onToken(i, token) {
+    tokens[i] = { token: token, ts: Date.now() };
+    setState(i, "ok · " + token.length, "ok");
+    var box = document.getElementById("tk" + i);
+    box.className = "token";
+    box.textContent = token.slice(0, 42) + "…";
+    sync();
+  }
+
+  function onError(i, code) {
+    setState(i, "error " + code + (String(code) === "110200" ? " · hostname not allowed" : ""), "err");
+  }
+
+  function onExpired(i) {
+    delete tokens[i];
+    setState(i, "expired", "");
+    var box = document.getElementById("tk" + i);
+    box.className = "token empty";
+    box.textContent = "token expired";
+    sync();
+  }
+
+  function resetAll() {
+    for (var i = 0; i < COUNT; i++) {
+      delete tokens[i];
+      try {
+        if (ids[i] !== undefined) window.turnstile.reset(ids[i]);
+      } catch (e) { /* ignore */ }
+      setState(i, "waiting", "");
+      var box = document.getElementById("tk" + i);
+      box.className = "token empty";
+      box.textContent = "token will appear here";
+    }
+    sync();
+  }
+
+  function solveAll() {
+    for (var i = 0; i < COUNT; i++) {
+      setState(i, "triggered", "");
+      try {
+        if (ids[i] !== undefined) window.turnstile.execute(ids[i]);
+      } catch (e) { /* managed widgets may ignore execute */ }
+    }
+  }
+
+  function copyAll() {
+    var list = Object.keys(tokens).map(function (k) { return tokens[k].token; });
+    if (!list.length) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(list.join("\n")).then(function () {
+        document.getElementById("hint").textContent = "copied " + list.length + " token(s)";
+      });
+    }
+  }
+
+  window.__farm = {
+    ids: ids,
+    tokens: tokens,
+    count: function () { return Object.keys(tokens).length; },
+    resetAll: resetAll,
+    solveAll: solveAll,
+    copyAll: copyAll
+  };
+  window.__turnstileTokens = [];
+
+  function boot() {
+    if (!window.turnstile) {
+      setTimeout(boot, 100);
+      return;
+    }
+    for (var i = 0; i < COUNT; i++) {
+      (function (idx) {
+        var el = document.getElementById("w" + idx);
+        try {
+          ids[idx] = window.turnstile.render(el, {
+            sitekey: SITEKEY,
+            theme: "dark",
+            callback: function (token) { onToken(idx, token); },
+            "error-callback": function (code) { onError(idx, code); },
+            "expired-callback": function () { onExpired(idx); },
+            "timeout-callback": function () { onExpired(idx); }
+          });
+        } catch (e) {
+          onError(idx, "render: " + e.message);
+        }
+      })(i);
+    }
+  }
+
+  boot();
+})();
 </script>
 </body>
 </html>
